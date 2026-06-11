@@ -90,18 +90,40 @@ def main():
         tokens = json.load(resp)
 
     refresh = tokens.get("refresh_token")
+    access = tokens.get("access_token")
+
+    # Show which channel this token is bound to, so you can confirm it's right
+    if access:
+        try:
+            url = ("https://www.googleapis.com/youtube/v3/channels"
+                   "?part=snippet,statistics&mine=true")
+            req2 = urllib.request.Request(url, headers={"Authorization": f"Bearer {access}"})
+            with urllib.request.urlopen(req2) as r2:
+                info = json.load(r2)
+            items = info.get("items", [])
+            if items:
+                it = items[0]
+                stats = it.get("statistics", {})
+                print("\n" + "=" * 60)
+                print(f"TOKEN IS FOR CHANNEL:  {it['snippet']['title']}")
+                print(f"  channel id : {it['id']}")
+                print(f"  subscribers: {stats.get('subscriberCount','?')}"
+                      f"  |  videos: {stats.get('videoCount','?')}")
+                print("=" * 60)
+                print(">> You want the one named 'Drew Patel' with ~102 subscribers.")
+                print(">> If the numbers above are wrong, re-run and pick the OTHER brand account.\n")
+        except Exception as e:
+            print("(could not read channel info:", e, ")")
+
     if not refresh:
-        print("\nNo refresh_token returned. This usually means the app already "
-              "has consent. Revoke access at "
+        print("\nNo refresh_token returned. Revoke access at "
               "https://myaccount.google.com/permissions and run again.",
               file=sys.stderr)
         sys.exit(1)
 
-    print("\n" + "=" * 60)
     print("SUCCESS — your refresh token (keep it secret):\n")
     print(refresh)
-    print("\nPut it in the Routine as GOOGLE_REFRESH_TOKEN.")
-    print("=" * 60)
+    print("\nPut it in the environment as GOOGLE_REFRESH_TOKEN (no quotes).")
 
 if __name__ == "__main__":
     main()
