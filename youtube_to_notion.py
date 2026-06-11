@@ -195,46 +195,53 @@ def engaged_views(token, vid, end):
 def pull_video(token, v):
     fmt = detect_format(v["id"], v["duration_s"])
     pub = dt.date.fromisoformat(v["published"])
+
+    # --- engagement / retention: age-anchored (these metrics exist for all time) ---
     snaps, latest = {}, None
     for name, days in ANCHORS[fmt]:
-        win_end = pub + dt.timedelta(days=days)
-        if win_end > TODAY:           # window not complete yet
+        if pub + dt.timedelta(days=days) > TODAY:        # window not complete yet
             continue
-        end_s = win_end.isoformat()
+        end_s = (pub + dt.timedelta(days=days)).isoformat()
         snap = engagement(token, v["id"], v["published"], end_s) or {}
-        if fmt == "Long":
-            r_start = max(v["published"], REACH_START)
-            pkg, srch, feed_i, conf = reach(token, v["id"], r_start, end_s)
-            snap.update(pkg_ctr=pkg, search_ctr=srch, feed_impr=feed_i, reach_conf=conf)
-        else:
-            snap.update(pkg_ctr=None, search_ctr=None, feed_impr=0, reach_conf="n/a")
         snap["age_days"] = days
         snaps[name] = snap
         latest = name
+    head = snaps.get(latest, {}) if latest else {}
+
+    # --- reach / CTR: LIFETIME, not anchored. The thumbnail-impression metric only
+    #     exists from REACH_START, so an old video's first-90-day window predates it
+    #     entirely. Pull cumulative available impressions instead. ---
+    pkg = srch = None
+    feed_i = 0
+    reach_conf = "n/a"
+    if fmt == "Long":
+        reach_conf = "High" if v["published"] >= REACH_START else "Low"
+        pkg, srch, feed_i, _ = reach(token, v["id"], v["published"], TODAY_S)
+        if not feed_i:        # API may not serve pre-metric dates; retry from metric start
+            pkg, srch, feed_i, _ = reach(token, v["id"], REACH_START, TODAY_S)
 
     r30, r3, intro = retention(token, v["id"], v["duration_s"], TODAY_S)
     ext_share, diluted = external_share(token, v["id"], TODAY_S)
     eng_v = engaged_views(token, v["id"], TODAY_S) if fmt == "Short" else None
 
-    head = snaps.get(latest, {}) if latest else {}
-    feed_i = head.get("feed_impr", 0) or 0
-    matured = ("mature" in snaps)
+    matured  = ("mature" in snaps)
     power_ok = feed_i >= POWER_IMPR
-    eligible = bool(matured and power_ok and not diluted)
+    eligible = bool(fmt == "Long" and matured and power_ok and not diluted)
 
     return {
         "format": fmt, "duration_s": v["duration_s"], "snapshot_age": latest,
         "views": head.get("views"), "watch_min": head.get("watch_min"),
         "avd_s": head.get("avd_s"), "avd_pct": head.get("avd_pct"),
-        "pkg_ctr": head.get("pkg_ctr"), "search_ctr": head.get("search_ctr"),
+        "pkg_ctr": pkg, "search_ctr": srch,
         "feed_impr": feed_i if fmt == "Long" else None,
         "likes_1k": head.get("likes_1k"), "comments_1k": head.get("comments_1k"),
         "shares_1k": head.get("shares_1k"), "subs_1k": head.get("subs_1k"),
         "engaged_views": eng_v, "ret_30s": r30, "intro_drop": intro,
         "ext_share": ext_share, "diluted": diluted, "matured": matured,
-        "power_ok": power_ok, "eligible": eligible,
-        "reach_conf": head.get("reach_conf", "Low") if fmt == "Long" else "n/a",
+        "power_ok": power_ok, "eligible": eligible, "reach_conf": reach_conf,
         "snapshots_json": json.dumps({"format": fmt, "duration_s": v["duration_s"],
+                                      "lifetime_reach": {"pkg_ctr": pkg, "search_ctr": srch,
+                                                         "feed_impr": feed_i, "conf": reach_conf},
                                       "retention": {"at_30s": r30, "at_3s": r3,
                                                     "intro_drop": intro},
                                       "external_share": ext_share,
