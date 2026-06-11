@@ -1,0 +1,16 @@
+# OAuth client secrets — never commit
+client_secret*.json
+
+# Tokens / credentials
+token.json
+credentials.json
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
